@@ -5,6 +5,8 @@ VisualStudioVersion = 15.0.27703.2026
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExcessivelySimpleEventStore", "ExcessivelySimpleEventStore\ExcessivelySimpleEventStore.csproj", "{AD4BA2B5-A417-423F-8ECA-5384A2CECBBE}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ExcessivelySimpleEventStoreTests", "ExcessivelySimpleEventStoreTests\ExcessivelySimpleEventStoreTests.csproj", "{35C9BBEB-372B-40C6-8BDA-29C3BE5579F0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{AD4BA2B5-A417-423F-8ECA-5384A2CECBBE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AD4BA2B5-A417-423F-8ECA-5384A2CECBBE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{AD4BA2B5-A417-423F-8ECA-5384A2CECBBE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{35C9BBEB-372B-40C6-8BDA-29C3BE5579F0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{35C9BBEB-372B-40C6-8BDA-29C3BE5579F0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{35C9BBEB-372B-40C6-8BDA-29C3BE5579F0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35C9BBEB-372B-40C6-8BDA-29C3BE5579F0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
