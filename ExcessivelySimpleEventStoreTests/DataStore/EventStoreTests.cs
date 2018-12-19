@@ -13,37 +13,6 @@ namespace ExcessivelySimpleEventStoreTests.DataStore
     public class EventStoreTests
     {
         [Test]
-        public void When_insert_then_retrieve()
-        {
-            //Arrange
-            var controller = new TestController();
-            var dataStoreFile = Path.Combine("fakePath", "TestDataStore.db");
-
-            var fileSystem = GetMockFileSystem(dataStoreFile);
-
-            var dataStore = new EventStore<TestController, TestDataType>(controller, x => x.Id.ToString(), fileSystem, dataStoreFile);
-
-            var insertData = new TestDataType
-            {
-                Id = 321,
-                MyData = new List<string>
-                {
-                    "hello",
-                    "bye",
-                    "three"
-                }
-            };
-
-
-            //Act
-            dataStore.AddOrUpdate(insertData);
-            var loadedData = dataStore.Get(insertData.Id.ToString());
-
-            //Assert
-            loadedData.Should().BeEquivalentTo(insertData);
-        }
-
-        [Test]
         public void When_insert_then_load_from_disk_and_retrieve()
         {
             //Arrange
@@ -65,16 +34,29 @@ namespace ExcessivelySimpleEventStoreTests.DataStore
                 }
             };
 
+            var dataStoreAction = (IEventStoreAction<TestDataType>) dataStore;
+
 
             //Act
-            dataStore.ExecuteEvent("AddItem", new TestController.AddItemCommand
+            dataStoreAction.ExecuteEvent("AddItem", new TestController.AddItemCommand
                 {
-
+                    IdToAddTo = 321,
+                    NewItem = "bye"
+            });
+            dataStoreAction.ExecuteEvent("AddItem", new TestController.AddItemCommand
+                {
+                    IdToAddTo = 321,
+                    NewItem = "hello"
+            });
+            dataStoreAction.ExecuteEvent("AddItem", new TestController.AddItemCommand
+                {
+                    IdToAddTo = 321,
+                    NewItem = "three"
                 });
             dataStore.WriteQueueToDisk().Wait();
 
             var loadedDataStore = new EventStore<TestController, TestDataType>(controller, x => x.Id.ToString(), fileSystem, dataStoreFile);
-            var loadedData = loadedDataStore.Get(insertData.Id.ToString());
+            var loadedData = ((IEventStoreAction<TestDataType>)loadedDataStore).Get(insertData.Id.ToString());
 
             //Assert
             loadedData.Should().BeEquivalentTo(insertData);
@@ -96,6 +78,13 @@ namespace ExcessivelySimpleEventStoreTests.DataStore
                 // using object reference method
                 var id = cmd.IdToAddTo;
                 var value = datastore.Get(id.ToString());
+
+                if (value == null)
+                {
+                    value = new TestDataType {Id = id, MyData = new List<string>()};
+                    datastore.AddOrUpdate(value);
+                }
+
                 value.MyData.Add(cmd.NewItem);
 
                 //datastore.AddOrUpdate(id.ToString(), cmd.NewItem);

@@ -28,7 +28,7 @@ namespace ExcessivelySimpleEventStore.DataStore
     /// <summary>
     /// A super minimal event store implementation from my (hopefully) understanding the concepts but never looking at any implementations
     /// </summary>
-    public class EventStore<TController, TValue> : IEventStoreAction<TValue>
+    public class EventStore<TController, TValue> : IEventStoreAction<TValue>, IDisposable
     {
         private int FlushFrequencySeconds = 5;
 
@@ -171,7 +171,7 @@ namespace ExcessivelySimpleEventStore.DataStore
 
                 if (isInitializing)
                 {
-                    var paramType = cmd.method.GetParameters()[0].ParameterType;
+                    var paramType = cmd.method.GetParameters()[1].ParameterType;
                     payload = JsonConvert.DeserializeObject((string)payload, paramType);
                 }
 
@@ -246,6 +246,11 @@ namespace ExcessivelySimpleEventStore.DataStore
                     DoWorkSemaphore.Release();
                 }
             }
+        }
+
+        public void Dispose()
+        {
+            _writerTask?.Dispose();
         }
     }
 }
