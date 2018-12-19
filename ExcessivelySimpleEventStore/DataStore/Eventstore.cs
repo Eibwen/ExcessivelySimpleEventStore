@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using TKey = System.String;
@@ -13,12 +15,13 @@ namespace ExcessivelySimpleEventStore.DataStore
     /// <summary>
     /// A super minimal event store implementation from my (hopefully) understanding the concepts but never looking at any implementations
     /// </summary>
-    public class ExcessivelySimpleEventStore<TValue>
+    public class EventStore<TController, TValue>
     {
         private int FlushFrequencySeconds = 5;
 
         private readonly Dictionary<TKey, TValue> _datastore;
         readonly Func<TValue, TKey> _getKey;
+        private readonly FileSystem _fileSystem;
         readonly string _fileStorageLocation;
 
         readonly object _controller;
@@ -28,19 +31,20 @@ namespace ExcessivelySimpleEventStore.DataStore
         // ReSharper disable once NotAccessedField.Local
         private readonly Task _writerTask;
 
-        public ExcessivelySimpleEventStore(object controller, Func<TValue, TKey> getKey, string fileStorageLocation)
+        public EventStore(TController controller, Func<TValue, TKey> getKey, FileSystem fileSystem, string fileStorageLocation)
         {
             _controller = controller;
             _getKey = getKey;
+            _fileSystem = fileSystem;
             _fileStorageLocation = fileStorageLocation;
 
             _controllerEvents = BuildEvents(controller);
 
-            if (File.Exists(fileStorageLocation))
+            if (_fileSystem.File.Exists(fileStorageLocation))
             {
                 //Format is "<event>\t<params>"
                 //  <params> is "{
-                var events = File.ReadAllLines(fileStorageLocation)
+                var events = _fileSystem.File.ReadAllLines(fileStorageLocation)
                                 .Where(x => !x.StartsWith("#"))
                                 .Select(x => x.Split('\t'))
                                 .Select(x => new
@@ -85,7 +89,7 @@ namespace ExcessivelySimpleEventStore.DataStore
         /// </remarks>
         /// <param name="method"></param>
         /// <returns></returns>
-        public bool IsValidControllerCommand(MethodInfo method)
+        private bool IsValidControllerCommand(MethodInfo method)
         {
             var parameters = method.GetParameters();
             if (parameters.Length != 2)
@@ -93,7 +97,7 @@ namespace ExcessivelySimpleEventStore.DataStore
                 return false;
             }
             var databaseAsFirstParameter = parameters[0].ParameterType;
-            if (databaseAsFirstParameter.GetGenericTypeDefinition() != typeof(ExcessivelySimpleEventStore<>))
+            if (databaseAsFirstParameter.GetGenericTypeDefinition() != typeof(EventStore<,>))
             {
                 return false;
             }
@@ -198,7 +202,7 @@ namespace ExcessivelySimpleEventStore.DataStore
         {
             if (_writeQueue.Count > 0)
             {
-                using (FileStream fs = new FileStream(_fileStorageLocation,
+                using (var fs = _fileSystem.FileStream.Create(_fileStorageLocation,
                     FileMode.Append, FileAccess.Write, FileShare.None,
                     bufferSize: 4096, useAsync: false))
                 using (StreamWriter sw = new StreamWriter(fs, Encoding.UTF8, 4096))
@@ -214,13 +218,22 @@ namespace ExcessivelySimpleEventStore.DataStore
             }
         }
 
+        private static readonly SemaphoreSlim DoWorkSemaphore = new SemaphoreSlim(1, 1);
         private async Task DoWorkAsyncInfiniteLoop(Func<Task> work)
         {
             while (true)
             {
-                await work();
+                await DoWorkSemaphore.WaitAsync();
+                try
+                {
+                    await work();
 
-                await Task.Delay(TimeSpan.FromSeconds(FlushFrequencySeconds));
+                    await Task.Delay(TimeSpan.FromSeconds(FlushFrequencySeconds));
+                }
+                finally
+                {
+                    DoWorkSemaphore.Release();
+                }
             }
         }
     }
