@@ -23,6 +23,7 @@ namespace ExcessivelySimpleEventStore.DataStore
 
         void AddOrUpdate(TValue value);
         void ExecuteEvent(string command, object payload);
+        void ExecuteEvent<T>(T payload);
     }
 
     /// <summary>
@@ -38,7 +39,8 @@ namespace ExcessivelySimpleEventStore.DataStore
         readonly string _fileStorageLocation;
 
         readonly object _controller;
-        readonly Dictionary<string, (bool isCommand, MethodInfo method)> _controllerEvents;
+        private readonly Dictionary<string, CommandInfo> _controllerEvents;
+        private readonly Dictionary<Type, CommandInfo> _controllerEventLookupByPayload;
 
         readonly Queue<string> _writeQueue = new Queue<string>();
         // ReSharper disable once NotAccessedField.Local
@@ -51,7 +53,7 @@ namespace ExcessivelySimpleEventStore.DataStore
             _fileSystem = fileSystem;
             _fileStorageLocation = fileStorageLocation;
 
-            _controllerEvents = BuildEvents(controller);
+            BuildLookups(controller, out _controllerEvents, out _controllerEventLookupByPayload);
 
             _datastore = new Dictionary<TKey, TValue>();
 
@@ -77,18 +79,31 @@ namespace ExcessivelySimpleEventStore.DataStore
             //Startup writer Task
             _writerTask = DoWorkAsyncInfiniteLoop(WriteQueueToDisk);
         }
-        private Dictionary<string, (bool isCommand, MethodInfo method)> BuildEvents(object controller)
+
+        private void BuildLookups(TController controller,
+                                  out Dictionary<string, CommandInfo> controllerEvents,
+                                  out Dictionary<Type, CommandInfo> payloadLookup)
+        {
+            var commands = BuildCommands(controller);
+            controllerEvents = commands.ToDictionary(k => k.CommandName, StringComparer.InvariantCultureIgnoreCase);
+            payloadLookup = commands
+                            .GroupBy(x => GetEventPayloadType(x.Method))
+                            .Where(x => x.Count() == 1)
+                            .ToDictionary(x => x.Key, x => x.Single());
+        }
+        private IEnumerable<CommandInfo> BuildCommands(object controller)
         {
             var methods = controller.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
                             .Where(m => !m.IsSpecialName)
-                            .Where(m => m.DeclaringType != typeof(object));
+                            .Where(m => m.DeclaringType != typeof(object))
+                                    .ToList();
 
             var invalidReturnTypes = methods.Where(x => x.ReturnType != typeof(void) && x.ReturnType != typeof(TValue));
             if (invalidReturnTypes.Any())
             {
                 throw new Exception($"Controller has methods defined which have a return value which is invalid.  Commands must either return {GetFriendlyName(typeof(TValue))} or void.  Offending method(s): {string.Join(", ", invalidReturnTypes.Select(x => x.Name))}");
             }
-            return methods.ToDictionary(x => x.Name, v => (IsValidControllerCommand(v), v), StringComparer.InvariantCultureIgnoreCase);
+            return methods.Select(v => new CommandInfo(v.Name, IsValidControllerCommand(v), v));
         }
         /// <summary>
         /// 
@@ -119,6 +134,20 @@ namespace ExcessivelySimpleEventStore.DataStore
             }
 
             return true;
+        }
+
+        private class CommandInfo
+        {
+            public CommandInfo(string commandName, bool isCommand, MethodInfo method)
+            {
+                CommandName = commandName;
+                IsCommand = isCommand;
+                Method = method;
+            }
+
+            public string CommandName { get; }
+            public bool IsCommand { get; }
+            public MethodInfo Method { get; }
         }
 
         // Read-only
@@ -153,6 +182,19 @@ namespace ExcessivelySimpleEventStore.DataStore
             ExecuteEvent_Internal(command, payload, false);
         }
 
+        void IEventStoreAction<TValue>.ExecuteEvent<T>(T payload)
+        {
+            if (_controllerEventLookupByPayload.TryGetValue(typeof(T), out var cmd))
+            {
+                LogEvent(cmd.CommandName, payload);
+                ExecuteCommand_Internal(cmd, payload, false);
+            }
+            else
+            {
+                throw new Exception("Unknown event type (needs to have a SINGLE command in the controller): " + typeof(T).Name);
+            }
+        }
+
         ///Use for commands with a return value
         private void AddOrUpdate_Internal(TValue value)
         {
@@ -160,36 +202,48 @@ namespace ExcessivelySimpleEventStore.DataStore
             _datastore[_getKey(value)] = value;
         }
 
+        private Type GetEventPayloadType(MethodInfo method)
+        {
+            return method.GetParameters()[1].ParameterType;
+        }
+
         private void ExecuteEvent_Internal(string command, object payload, bool isInitializing)
         {
             if (_controllerEvents.TryGetValue(command, out var cmd))
             {
-                if (!cmd.isCommand)
-                {
-                    throw new Exception($"Received command that exists but doesn't have a valid signature: {command}({GetFriendlyName(this.GetType())} datastore, ...)");
-                }
-
-                if (isInitializing)
-                {
-                    var paramType = cmd.method.GetParameters()[1].ParameterType;
-                    payload = JsonConvert.DeserializeObject((string)payload, paramType);
-                }
-
-                var returnValue = cmd.method.Invoke(_controller, new[] { this, payload });
-                if (returnValue != null)
-                {
-                    //Actually this might cause all kinds of reference problems if used improperly... should I protect against that?
-                    //  In the sense that this datastore should load/save properly and be consistent...
-                    //  ACTUALLY due to that, I think it would be consistent when reloading
-                    //  Just modifications might be weird
-                    AddOrUpdate_Internal((TValue)returnValue);
-                }
+                ExecuteCommand_Internal(cmd, payload, isInitializing);
             }
             else
             {
                 throw new Exception("Unknown command (needs to be implemented in the controller): " + command + " -- which must only have ONE parameter of any object type");
             }
         }
+
+        private void ExecuteCommand_Internal(CommandInfo cmd, object payload, bool isInitializing)
+        {
+            if (!cmd.IsCommand)
+            {
+                //TODO update this message
+                throw new Exception($"Received command that exists but doesn't have a valid signature: {cmd.CommandName}({GetFriendlyName(this.GetType())} datastore, ...)");
+            }
+
+            if (isInitializing)
+            {
+                var paramType = GetEventPayloadType(cmd.Method);
+                payload = JsonConvert.DeserializeObject((string) payload, paramType);
+            }
+
+            var returnValue = cmd.Method.Invoke(_controller, new[] {this, payload});
+            if (returnValue != null)
+            {
+                //Actually this might cause all kinds of reference problems if used improperly... should I protect against that?
+                //  In the sense that this datastore should load/save properly and be consistent...
+                //  ACTUALLY due to that, I think it would be consistent when reloading
+                //  Just modifications might be weird
+                AddOrUpdate_Internal((TValue) returnValue);
+            }
+        }
+
         private static string GetFriendlyName(Type type)
         {
             if (type.IsGenericType)

@@ -38,17 +38,17 @@ namespace ExcessivelySimpleEventStoreTests.DataStore
 
 
             //Act
-            dataStoreAction.ExecuteEvent("AddItem", new TestController.AddItemCommand
+            dataStoreAction.ExecuteEvent(nameof(TestController.AddItem), new TestController.AddItemCommand
                 {
                     IdToAddTo = 321,
                     NewItem = "bye"
             });
-            dataStoreAction.ExecuteEvent("AddItem", new TestController.AddItemCommand
+            dataStoreAction.ExecuteEvent(nameof(TestController.AddItem), new TestController.AddItemCommand
                 {
                     IdToAddTo = 321,
                     NewItem = "hello"
             });
-            dataStoreAction.ExecuteEvent("AddItem", new TestController.AddItemCommand
+            dataStoreAction.ExecuteEvent(nameof(TestController.AddItem), new TestController.AddItemCommand
                 {
                     IdToAddTo = 321,
                     NewItem = "three"
@@ -87,8 +87,8 @@ namespace ExcessivelySimpleEventStoreTests.DataStore
 
                 value.MyData.Add(cmd.NewItem);
 
+                // Alternatively could just always call AddOrUpdate
                 //datastore.AddOrUpdate(id.ToString(), cmd.NewItem);
-                //datastore.Transform(id.ToString(), 
             }
 
             public TestDataType ModifyItem(IEventStoreAction<TestDataType> datastore, ModifyItemCommand cmd)
@@ -111,6 +111,10 @@ namespace ExcessivelySimpleEventStoreTests.DataStore
             {
                 public int IdToAddTo { get; set; }
                 public string NewItem { get; set; }
+            }
+            public class RemoveAllVowels
+            {
+                public int Id { get; set; }
             }
             public class ModifyItemCommand
             {
