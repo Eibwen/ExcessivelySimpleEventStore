@@ -1,6 +1,10 @@
 ﻿using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
+using System.Threading;
 using ExcessivelySimpleEventStore.DataStore;
+using FluentAssertions;
 using NUnit.Framework;
 
 namespace ExcessivelySimpleEventStoreTests.DataStore
@@ -9,26 +13,85 @@ namespace ExcessivelySimpleEventStoreTests.DataStore
     public class EventStoreTests
     {
         [Test]
-        public void When_()
+        public void When_insert_then_retrieve()
         {
             //Arrange
-            var fileSystem = new FileSystem();
-
             var controller = new TestController();
-            var dataStoreFile = fileSystem.Path.Combine("fakePath", "TestDataStore.db");
+            var dataStoreFile = Path.Combine("fakePath", "TestDataStore.db");
+
+            var fileSystem = GetMockFileSystem(dataStoreFile);
+
             var dataStore = new EventStore<TestController, TestDataType>(controller, x => x.Id.ToString(), fileSystem, dataStoreFile);
+
+            var insertData = new TestDataType
+            {
+                Id = 321,
+                MyData = new List<string>
+                {
+                    "hello",
+                    "bye",
+                    "three"
+                }
+            };
 
 
             //Act
-            dataStore
+            dataStore.AddOrUpdate(insertData);
+            var loadedData = dataStore.Get(insertData.Id.ToString());
 
             //Assert
+            loadedData.Should().BeEquivalentTo(insertData);
+        }
 
+        [Test]
+        public void When_insert_then_load_from_disk_and_retrieve()
+        {
+            //Arrange
+            var controller = new TestController();
+            var dataStoreFile = Path.Combine(@"f:\fakePath", "TestDataStore.db");
+
+            var fileSystem = GetMockFileSystem(dataStoreFile);
+
+            var dataStore = new EventStore<TestController, TestDataType>(controller, x => x.Id.ToString(), fileSystem, dataStoreFile);
+
+            var insertData = new TestDataType
+            {
+                Id = 321,
+                MyData = new List<string>
+                {
+                    "hello",
+                    "bye",
+                    "three"
+                }
+            };
+
+
+            //Act
+            dataStore.ExecuteEvent("AddItem", new TestController.AddItemCommand
+                {
+
+                });
+            dataStore.WriteQueueToDisk().Wait();
+
+            var loadedDataStore = new EventStore<TestController, TestDataType>(controller, x => x.Id.ToString(), fileSystem, dataStoreFile);
+            var loadedData = loadedDataStore.Get(insertData.Id.ToString());
+
+            //Assert
+            loadedData.Should().BeEquivalentTo(insertData);
+        }
+
+        private IFileSystem GetMockFileSystem(string file, string existingBody = "")
+        {
+            return new MockFileSystem(
+                new Dictionary<string, MockFileData>
+                {
+                    { file, existingBody }
+                });
         }
 
         class TestController
         {
-            public void AddItem(EventStore<TestController, TestDataType> datastore, AddItemCommand cmd)
+            public void AddItem(IEventStoreAction<TestDataType> datastore, AddItemCommand cmd)
             {
                 // using object reference method
                 var id = cmd.IdToAddTo;
@@ -39,13 +102,13 @@ namespace ExcessivelySimpleEventStoreTests.DataStore
                 //datastore.Transform(id.ToString(), 
             }
 
-            public TestDataType ModifyItem(EventStore<TestController, TestDataType> datastore, ModifyItemCommand cmd)
+            public TestDataType ModifyItem(IEventStoreAction<TestDataType> datastore, ModifyItemCommand cmd)
             {
                 var oldItem = datastore.Get(cmd.Id.ToString());
                 oldItem.MyData.Add("Some operation updating shit");
                 return oldItem;
             }
-            public TestDataType ModifyCloneItem(EventStore<TestController, TestDataType> datastore, ModifyItemCommand cmd)
+            public TestDataType ModifyCloneItem(IEventStoreAction<TestDataType> datastore, ModifyItemCommand cmd)
             {
                 //TODO this operation will fuck up things I think!!
                 var oldItem = datastore.Get(cmd.Id.ToString());

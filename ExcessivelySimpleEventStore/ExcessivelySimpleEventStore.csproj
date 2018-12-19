@@ -9,4 +9,10 @@
     <PackageReference Include="System.IO.Abstractions" Version="3.0.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="System">
+      <HintPath>System</HintPath>
+    </Reference>
+  </ItemGroup>
+
 </Project>

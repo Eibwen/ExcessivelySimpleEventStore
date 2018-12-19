@@ -12,16 +12,29 @@ using TKey = System.String;
 
 namespace ExcessivelySimpleEventStore.DataStore
 {
+    public interface IEventStoreAction<TValue>
+    {
+        TValue Get(TKey key);
+
+        /// <summary>
+        /// Avoid using this for common tasks.  Data migration is fine, but this is definitely not optimized
+        /// </summary>
+        IEnumerable<TValue> Query(Func<KeyValuePair<TKey, TValue>, bool> selection);
+
+        void AddOrUpdate(TValue value);
+        void ExecuteEvent(string command, object payload);
+    }
+
     /// <summary>
     /// A super minimal event store implementation from my (hopefully) understanding the concepts but never looking at any implementations
     /// </summary>
-    public class EventStore<TController, TValue>
+    public class EventStore<TController, TValue> : IEventStoreAction<TValue>
     {
         private int FlushFrequencySeconds = 5;
 
         private readonly Dictionary<TKey, TValue> _datastore;
         readonly Func<TValue, TKey> _getKey;
-        private readonly FileSystem _fileSystem;
+        private readonly IFileSystem _fileSystem;
         readonly string _fileStorageLocation;
 
         readonly object _controller;
@@ -31,7 +44,7 @@ namespace ExcessivelySimpleEventStore.DataStore
         // ReSharper disable once NotAccessedField.Local
         private readonly Task _writerTask;
 
-        public EventStore(TController controller, Func<TValue, TKey> getKey, FileSystem fileSystem, string fileStorageLocation)
+        public EventStore(TController controller, Func<TValue, TKey> getKey, IFileSystem fileSystem, string fileStorageLocation)
         {
             _controller = controller;
             _getKey = getKey;
@@ -39,6 +52,8 @@ namespace ExcessivelySimpleEventStore.DataStore
             _fileStorageLocation = fileStorageLocation;
 
             _controllerEvents = BuildEvents(controller);
+
+            _datastore = new Dictionary<TKey, TValue>();
 
             if (_fileSystem.File.Exists(fileStorageLocation))
             {
@@ -57,10 +72,6 @@ namespace ExcessivelySimpleEventStore.DataStore
                 {
                     ExecuteEvent_Internal(e.Event, e.Params, true);
                 }
-            }
-            else
-            {
-                _datastore = new Dictionary<TKey, TValue>();
             }
 
             //Startup writer Task
@@ -97,7 +108,7 @@ namespace ExcessivelySimpleEventStore.DataStore
                 return false;
             }
             var databaseAsFirstParameter = parameters[0].ParameterType;
-            if (databaseAsFirstParameter.GetGenericTypeDefinition() != typeof(EventStore<,>))
+            if (databaseAsFirstParameter.GetGenericTypeDefinition() != typeof(IEventStoreAction<>))
             {
                 return false;
             }
@@ -111,7 +122,7 @@ namespace ExcessivelySimpleEventStore.DataStore
         }
 
         // Read-only
-        public TValue Get(TKey key)
+        TValue IEventStoreAction<TValue>.Get(TKey key)
         {
             if (_datastore.TryGetValue(key, out var value))
             {
@@ -121,26 +132,26 @@ namespace ExcessivelySimpleEventStore.DataStore
         }
 
         /// <summary>
-        /// Avoid using this for common tasks.  Datamigration is fine, but this is definitely not optimized
+        /// Avoid using this for common tasks.  Data migration is fine, but this is definitely not optimized
         /// </summary>
-        public IEnumerable<TValue> Query(Func<KeyValuePair<TKey, TValue>, bool> selection)
+        IEnumerable<TValue> IEventStoreAction<TValue>.Query(Func<KeyValuePair<TKey, TValue>, bool> selection)
         {
             return _datastore.Where(selection).Select(x => x.Value);
         }
 
 
         // State change functions
-        public void AddOrUpdate(TValue value)
+        void IEventStoreAction<TValue>.AddOrUpdate(TValue value)
         {
             LogVerboseEvent("+", value);
             AddOrUpdate_Internal(value);
         }
 
-        //private void ExecuteEvent(string command, object payload)
-        //{
-        //    LogEvent(command, payload);
-        //    ExecuteEvent_Internal(command, payload, false);
-        //}
+        void IEventStoreAction<TValue>.ExecuteEvent(string command, object payload)
+        {
+            LogEvent(command, payload);
+            ExecuteEvent_Internal(command, payload, false);
+        }
 
         ///Use for commands with a return value
         private void AddOrUpdate_Internal(TValue value)
@@ -198,7 +209,7 @@ namespace ExcessivelySimpleEventStore.DataStore
             _writeQueue.Enqueue($"# {command}\t{JsonConvert.SerializeObject(payload)}");
         }
 
-        private async Task WriteQueueToDisk()
+        internal async Task WriteQueueToDisk()
         {
             if (_writeQueue.Count > 0)
             {
