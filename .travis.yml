@@ -1,7 +1,7 @@
 language: csharp
 solution: ExcessivelySimpleEventStore.sln
 mono: none
-dotnet: 2.2
+dotnet: 2.2.10
 
 before_install:
   - cd src
