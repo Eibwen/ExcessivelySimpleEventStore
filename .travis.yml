@@ -1,7 +1,9 @@
 language: csharp
 solution: ExcessivelySimpleEventStore.sln
 mono: none
-dotnet: 2.1
+sudo: required
+dist: xenial
+dotnet: 2.2
 
 before_install:
   - cd src
@@ -22,4 +24,7 @@ after_success:
   #   OR if a tag is present... TODO figure out how I'd want to use tags
   #- [[ "$TRAVIS_BRANCH" == "master" || -n "$TRAVIS_TAG" ]] && dotnet nuget push ExcessivelySimpleEventStore/bin/Release/ExcessivelySimpleEventStore.*.nupkg --api-key $NUGET_API_KEY
   - dotnet nuget push ExcessivelySimpleEventStore/bin/Release/ExcessivelySimpleEventStore.*.nupkg --api-key $NUGET_API_KEY
-  
+
+global:
+  - DOTNET_SKIP_FIRST_TIME_EXPERIENCE=true
+  - DOTNET_CLI_TELEMETRY_OPTOUT=1
