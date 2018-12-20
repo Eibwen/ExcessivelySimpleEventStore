@@ -6,6 +6,7 @@
     <RepositoryUrl>https://github.com/Eibwen/ExcessivelySimpleEventStore</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseUrl>https://github.com/Eibwen/ExcessivelySimpleEventStore/blob/master/LICENSE</PackageLicenseUrl>
+    <Description>An attempt at a EventStreamStore and CurrentStateStore that uses a simple text file for storage.  NOT ready for production usage.  Good for playing with ideas and concepts.</Description>
   </PropertyGroup>
 
   <ItemGroup>
